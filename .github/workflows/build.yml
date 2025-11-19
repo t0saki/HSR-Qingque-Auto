@@ -1,0 +1,57 @@
+name: Build and Release Exe
+
+# 触发机制：当你推送类似 'v1.0' 这样的 tag 时触发构建和发布
+on:
+  push:
+    tags:
+      - 'v*'
+  # 也可以手动触发
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    #以此获得上传 Release 的权限
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # 建议使用稳定版本
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build EXE with PyInstaller
+        # 核心参数解释：
+        # --onefile: 打包成单文件
+        # --uac-admin: 启动时请求管理员权限 (自动提权)
+        # --add-data: 将图片打包进去 (Windows下格式为 源文件;目标路径)
+        # --name: 指定生成的文件名
+        # --clean: 清理缓存
+        run: |
+          pyinstaller --noconfirm --onefile --clean --uac-admin --add-data "e_disabled.jpg;." --name "QingqueAuto" qingque_auto.py
+
+      - name: Upload Artifact (Optional)
+        # 这一步让你在 Actions 页面能直接下载构建产物进行测试
+        uses: actions/upload-artifact@v4
+        with:
+          name: QingqueAuto-exe
+          path: dist/QingqueAuto.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/QingqueAuto.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

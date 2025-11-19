@@ -7,9 +7,22 @@ import keyboard
 import os
 import pygetwindow as gw
 from datetime import datetime
+import sys
+
+
+def resource_path(relative_path):
+    """ 获取资源绝对路径，兼容 Dev 和 PyInstaller 打包后的环境 """
+    try:
+        # PyInstaller 创建临时文件夹并将路径存储在 _MEIPASS 中
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 # ================= 配置区域 =================
-TEMPLATE_IMAGE = 'e_disabled.jpg'
+# TEMPLATE_IMAGE = 'e_disabled.jpg'
+TEMPLATE_IMAGE = resource_path('e_disabled.jpg')
 SKILL_KEY = 'e'
 ATTACK_KEY = 'q'
 CONFIDENCE = 0.8
