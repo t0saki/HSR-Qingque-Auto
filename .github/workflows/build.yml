@@ -39,7 +39,7 @@ jobs:
         # --name: 指定生成的文件名
         # --clean: 清理缓存
         run: |
-          pyinstaller --noconfirm --onefile --clean --uac-admin --add-data "e_disabled.jpg;." --name "QingqueAuto" qingque_auto.py
+          pyinstaller --noconfirm --onefile --clean --uac-admin --windowed --icon "icon.ico" --add-data "e_disabled.jpg;." --add-data "icon.ico;." --name "QingqueAuto" qingque_auto.py
 
       - name: Upload Artifact (Optional)
         # 这一步让你在 Actions 页面能直接下载构建产物进行测试

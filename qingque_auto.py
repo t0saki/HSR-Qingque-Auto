@@ -23,6 +23,7 @@ def resource_path(relative_path):
 # ================= 配置区域 =================
 # TEMPLATE_IMAGE = 'e_disabled.jpg'
 TEMPLATE_IMAGE = resource_path('e_disabled.jpg')
+ICON_PATH = resource_path('icon.ico')
 SKILL_KEY = 'e'
 ATTACK_KEY = 'q'
 CONFIDENCE = 0.8
@@ -35,6 +36,12 @@ class QingqueBotGUI:
         self.root.title("青雀自动机")
         self.root.geometry("350x280")
         self.root.attributes('-topmost', True)  # 窗口置顶
+
+        try:
+            if os.path.exists(ICON_PATH):
+                self.root.iconbitmap(ICON_PATH)
+        except Exception as e:
+            print(f"加载图标失败: {e}")
 
         # 状态变量
         self.is_running = False
