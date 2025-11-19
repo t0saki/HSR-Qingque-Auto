@@ -34,7 +34,7 @@ class QingqueBotGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("青雀自动机")
-        self.root.geometry("350x280")
+        self.root.geometry("400x400")
         self.root.attributes('-topmost', True)  # 窗口置顶
 
         try:
