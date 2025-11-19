@@ -21,7 +21,7 @@
 
 ### 1\. 获取软件
 
-前往本项目的 [Release][https://github.com/t0saki/HSR-Qingque-Auto/releases] 页面下载最新的 `QingqueAuto.exe`。
+前往本项目的 [Release](https://github.com/t0saki/HSR-Qingque-Auto/releases) 页面下载最新的 `QingqueAuto.exe`。
 
 > **注意**：该程序包含自动化按键功能，杀毒软件可能会误报，请添加信任或暂时关闭。
 
