@@ -2,6 +2,8 @@
 
 > **“忙里偷闲，讲究的就是「偷」呀~” —— 青雀**
 
+[Bilibili演示视频](https://www.bilibili.com/video/BV1aGCoBXEWR/)
+
 专为《崩坏：星穹铁道》角色 **青雀 (Qingque)** 在“货币战争”模式中打造的自动化辅助工具。
 
 本工具通过图像识别技术，自动执行“狂按战技 (E) 直到触发暗杠（四张同色牌），然后释放强化普攻 (Q)”的操作。解放双手，让摸鱼变得更轻松。
@@ -21,7 +23,7 @@
 
 ### 1\. 获取软件
 
-前往本项目的 [Release][https://github.com/t0saki/HSR-Qingque-Auto/releases] 页面下载最新的 `QingqueAuto.exe`。
+前往本项目的 [Release](https://github.com/t0saki/HSR-Qingque-Auto/releases) 页面下载最新的 `QingqueAuto.exe`。
 
 > **注意**：该程序包含自动化按键功能，杀毒软件可能会误报，请添加信任或暂时关闭。
 
