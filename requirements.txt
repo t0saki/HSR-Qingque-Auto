@@ -3,3 +3,4 @@ opencv-python
 keyboard
 pygetwindow
 Pillow
+numpy
