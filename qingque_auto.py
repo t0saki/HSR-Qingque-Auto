@@ -23,11 +23,11 @@ def resource_path(relative_path):
 
 
 # ================= 配置区域 =================
-TEMPLATE_IMAGE_PATH = resource_path('e_disabled.jpg')  # 变量名改一下，这是路径
+TEMPLATE_IMAGE_PATH = resource_path('e_disabled.jpg')
 ICON_PATH = resource_path('icon.ico')
 SKILL_KEY = 'e'
 ATTACK_KEY = 'q'
-CONFIDENCE = 0.7
+CONFIDENCE = 0.65
 # 核心修改：设置你截图时的基准分辨率高度 (4K通常是2160，2K是1440，1080p是1080)
 BASE_RESOLUTION_HEIGHT = 2160
 # ===========================================
@@ -37,7 +37,7 @@ class QingqueBotGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("青雀自动机")
-        self.root.geometry("400x400")
+        self.root.geometry("400x420")
         self.root.attributes('-topmost', True)  # 窗口置顶
 
         try:
@@ -46,15 +46,22 @@ class QingqueBotGUI:
         except Exception as e:
             print(f"加载图标失败: {e}")
 
-        # 状态变量
+        # === 状态变量 ===
         self.is_running = False
         self.is_paused = False
-        self.skill_count = 0  # 记录当前轮次E按了多少次
-        self.game_region = None
         self.stop_event = threading.Event()
 
-        # 新增：用于存储当前使用的模板图片对象
+        # 游戏窗口对象 (用于重获焦点)
+        self.target_window = None
+        self.game_region = None
+
+        # 图像处理
         self.current_template_image = None
+
+        # === 新增：按键控制相关 ===
+        self.skill_count = 0
+        # 控制是否允许按E的标志位 (线程间共享)
+        self.spam_enabled = False
 
         # === 界面布局 ===
 
@@ -91,8 +98,7 @@ class QingqueBotGUI:
         keyboard.add_hotkey('f8', self.toggle_script_safe)
 
         self.log("程序已启动。")
-        self.log(f"基准分辨率高度: {BASE_RESOLUTION_HEIGHT}p")
-        self.log("脚本将自动根据游戏窗口大小缩放识别图。")
+        self.log("独立线程按键模式已加载。")
 
     def log(self, message):
         """向日志框添加信息"""
@@ -145,6 +151,15 @@ class QingqueBotGUI:
             self.log(f"图片处理失败: {e}")
             return False
 
+    def activate_window(self):
+        """ 尝试激活游戏窗口 """
+        if self.target_window:
+            try:
+                if not self.target_window.isActive:
+                    self.target_window.activate()
+            except Exception:
+                pass
+
     def toggle_script(self):
         if not self.is_running:
             # === 启动 ===
@@ -164,13 +179,9 @@ class QingqueBotGUI:
             except:
                 pass
 
-            # 1. 锁定窗口区域
-            self.game_region = self.get_game_region(window)
-
-            # 2. 关键步骤：根据窗口实际高度准备图片
-            # window.height 包含了标题栏，但通常比例是对的。
-            # 如果为了更精确，可以用 client area，但 window.height 足够通用。
-            if not self.prepare_template_image(window.height):
+            # 2. 计算区域和图片
+            self.game_region = self.get_game_region(self.target_window)
+            if not self.prepare_template_image(self.target_window.height):
                 return
 
             self.log(f"已锁定窗口，区域: {self.game_region}")
@@ -178,22 +189,35 @@ class QingqueBotGUI:
             self.is_running = True
             self.is_paused = False
             self.stop_event.clear()
+            self.spam_enabled = True  # 默认允许按E，直到看到禁止图标
+
             self.btn_start.config(text="暂停 (F8)")
             self.update_status("运行中", "green", "正在监控...")
 
-            # 开启后台线程
-            self.thread = threading.Thread(
-                target=self.automation_loop, daemon=True)
-            self.thread.start()
+            # === 启动双线程 ===
+            # 线程1: 视觉识别 (大脑)
+            self.vision_thread = threading.Thread(
+                target=self.vision_loop, daemon=True)
+            self.vision_thread.start()
+
+            # 线程2: 按键输出 (手速)
+            self.spam_thread = threading.Thread(
+                target=self.spam_loop, daemon=True)
+            self.spam_thread.start()
 
         else:
-            # === 暂停/继续 ===
+            # === 暂停/继续逻辑 ===
             self.is_paused = not self.is_paused
             if self.is_paused:
+                # 暂停
+                self.spam_enabled = False  # 暂停时禁止乱按
                 self.btn_start.config(text="继续 (F8)")
                 self.update_status("已暂停", "orange", "等待指令")
                 self.log("脚本已暂停")
             else:
+                # 继续
+                self.activate_window()  # === 核心修改：恢复运行时重新激活窗口 ===
+                self.spam_enabled = True
                 self.btn_start.config(text="暂停 (F8)")
                 self.update_status("运行中", "green", "继续监控...")
                 self.log("脚本继续运行")
@@ -212,37 +236,42 @@ class QingqueBotGUI:
         return None
 
     def get_game_region(self, window):
-        # 使用你之前觉得不错的参数
         region_left = int(window.left + window.width * 0.89)
         region_top = int(window.top + window.height * 0.70)
         region_width = int(window.width * 0.1)
         region_height = int(window.height * 0.15)
         return (region_left, region_top, region_width, region_height)
 
-    def automation_loop(self):
-        """核心自动化逻辑，在单独线程运行"""
+    # =================================================================
+    # 线程 1: 视觉识别循环 (大脑)
+    # =================================================================
+    def vision_loop(self):
         self.skill_count = 0
 
         while not self.stop_event.is_set():
             if not self.is_running:
                 break
 
+            # 暂停时，视觉线程也稍微休息，降低CPU占用
             if self.is_paused:
-                time.sleep(0.2)
+                time.sleep(0.5)
                 continue
 
             try:
-                # 核心修改：使用 self.current_template_image (PIL对象) 而不是文件名
+                # 识别是否存在“E不可用”图标
                 location = pyautogui.locateOnScreen(
-                    self.current_template_image,  # 传入内存中处理好的图片对象
+                    self.current_template_image,
                     confidence=CONFIDENCE,
                     grayscale=True,
                     region=self.game_region
                 )
 
                 if location:
-                    # === 暗杠 (E不可用) ===
-                    # 只有当之前是在抽牌状态，或者这是第一次检测到时，才记录日志
+                    # === 发现暗杠 ===
+                    # 1. 立即停止按E
+                    self.spam_enabled = False
+
+                    # 2. 记录日志和操作
                     if self.skill_count > 0:
                         self.root.after(
                             0, self.log, f"暗杠达成！(累计E了 {self.skill_count} 次)")
@@ -252,40 +281,66 @@ class QingqueBotGUI:
                     self.root.after(0, self.update_status,
                                     "释放攻击", "blue", "Q 键已按下")
 
+                    # 3. 按下 Q
                     pyautogui.press(ATTACK_KEY)
+                    self.skill_count = 0
 
-                    self.skill_count = 0  # 重置计数
-                    time.sleep(2.5)  # 等待动画
+                    # 4. 等待动画 (根据实际情况调整，如果是自动战斗，动画期间按键也无所谓)
+                    time.sleep(2.5)
 
-                    # 恢复状态显示
-                    self.root.after(0, self.update_status,
-                                    "运行中", "green", "等待下一轮...")
+                    # 5. 恢复状态，允许继续按E (如果还在运行)
+                    if self.is_running and not self.is_paused:
+                        self.root.after(0, self.update_status,
+                                        "运行中", "green", "等待下一轮...")
+                        self.spam_enabled = True
 
                 else:
-                    # === 抽牌 (E可用) ===
-                    self.skill_count += 1
+                    # === 没找到图标 ===
+                    # 只要没暂停，就允许按E
+                    # 视觉线程不负责按键，只负责“授权”
+                    if not self.is_paused:
+                        self.spam_enabled = True
 
-                    # 只更新状态栏文字，不写日志，保持日志区干净
-                    info_text = f"正在极速抽牌... (已按 {self.skill_count} 次)"
+                # 视觉识别不需要太高频，0.1s 检查一次足够
+                # 如果识别太快，CPU占用高
+                time.sleep(0.1)
+
+            except pyautogui.ImageNotFoundException:
+                # 没找到图 = 可以按E
+                if not self.is_paused:
+                    self.spam_enabled = True
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"Vision Error: {e}")
+                time.sleep(1)
+
+    # =================================================================
+    # 线程 2: 按键狂暴循环 (手速)
+    # =================================================================
+    def spam_loop(self):
+        """ 单独的线程，只负责狂按 E """
+        while not self.stop_event.is_set():
+            if not self.is_running:
+                break
+
+            # 只有当未暂停，且视觉线程授权(spam_enabled=True)时才按
+            if not self.is_paused and self.spam_enabled:
+                pyautogui.press(SKILL_KEY)
+                self.skill_count += 1
+
+                # 更新UI (为了不卡死界面，每按10次更新一次显示)
+                if self.skill_count % 10 == 0:
+                    info_text = f"极速抽牌中... ({self.skill_count})"
                     self.root.after(0, self.update_status,
                                     "抽牌中", "purple", info_text)
 
-                    pyautogui.press(SKILL_KEY)
-                    # 极速模式，微小延迟
-                    time.sleep(0.05)
-
-            except pyautogui.ImageNotFoundException:
-                # 同上，没找到图也当作可以抽牌
-                self.skill_count += 1
-                info_text = f"正在极速抽牌... (已按 {self.skill_count} 次)"
-                self.root.after(0, self.update_status,
-                                "抽牌中", "purple", info_text)
-                pyautogui.press(SKILL_KEY)
-                time.sleep(0.05)
-
-            except Exception as e:
-                self.root.after(0, self.log, f"错误: {e}")
-                time.sleep(1)
+                # 这里的延迟决定了手速
+                # 0.02s ≈ 一秒50次 (理论值)，实际上会被游戏输入队列限制
+                # 按过头了也没事，所以可以快一点
+                time.sleep(0.02)
+            else:
+                # 如果不允许按，就休息一会，避免死循环占用CPU
+                time.sleep(0.1)
 
 
 if __name__ == "__main__":
