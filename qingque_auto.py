@@ -8,6 +8,7 @@ import os
 import pygetwindow as gw
 from datetime import datetime
 import sys
+from PIL import Image, ImageTk
 
 
 def resource_path(relative_path):
@@ -20,13 +21,15 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
+
 # ================= 配置区域 =================
-# TEMPLATE_IMAGE = 'e_disabled.jpg'
-TEMPLATE_IMAGE = resource_path('e_disabled.jpg')
+TEMPLATE_IMAGE_PATH = resource_path('e_disabled.jpg')  # 变量名改一下，这是路径
 ICON_PATH = resource_path('icon.ico')
 SKILL_KEY = 'e'
 ATTACK_KEY = 'q'
-CONFIDENCE = 0.8
+CONFIDENCE = 0.7
+# 核心修改：设置你截图时的基准分辨率高度 (4K通常是2160，2K是1440，1080p是1080)
+BASE_RESOLUTION_HEIGHT = 2160
 # ===========================================
 
 
@@ -49,6 +52,9 @@ class QingqueBotGUI:
         self.skill_count = 0  # 记录当前轮次E按了多少次
         self.game_region = None
         self.stop_event = threading.Event()
+
+        # 新增：用于存储当前使用的模板图片对象
+        self.current_template_image = None
 
         # === 界面布局 ===
 
@@ -84,8 +90,9 @@ class QingqueBotGUI:
         # 4. 注册全局热键
         keyboard.add_hotkey('f8', self.toggle_script_safe)
 
-        self.log("程序已启动，请确保游戏在后台运行。")
-        self.log("按 'F8' 键或点击按钮开始。")
+        self.log("程序已启动。")
+        self.log(f"基准分辨率高度: {BASE_RESOLUTION_HEIGHT}p")
+        self.log("脚本将自动根据游戏窗口大小缩放识别图。")
 
     def log(self, message):
         """向日志框添加信息"""
@@ -107,11 +114,42 @@ class QingqueBotGUI:
         """热键调用的线程安全包装"""
         self.root.after(0, self.toggle_script)
 
+    def prepare_template_image(self, window_height):
+        """ 核心逻辑：根据窗口高度缩放模板图片 """
+        try:
+            if not os.path.exists(TEMPLATE_IMAGE_PATH):
+                self.log(f"错误: 找不到图片 {TEMPLATE_IMAGE_PATH}")
+                return False
+
+            # 加载原始图片
+            original_img = Image.open(TEMPLATE_IMAGE_PATH)
+
+            # 计算缩放比例 (当前窗口高度 / 截图时的基准高度)
+            scale_ratio = window_height / BASE_RESOLUTION_HEIGHT
+
+            # 只有当比例差异较大时才缩放，否则用原图
+            if abs(scale_ratio - 1.0) > 0.05:
+                new_width = int(original_img.width * scale_ratio)
+                new_height = int(original_img.height * scale_ratio)
+                # 使用 LANCZOS 算法进行高质量缩放
+                resized_img = original_img.resize(
+                    (new_width, new_height), Image.Resampling.LANCZOS)
+                self.current_template_image = resized_img
+                self.log(f"检测到窗口高度 {window_height}，缩放比例: {scale_ratio:.2f}")
+            else:
+                self.current_template_image = original_img
+                self.log(f"窗口高度 {window_height} 与基准接近，使用原图。")
+
+            return True
+        except Exception as e:
+            self.log(f"图片处理失败: {e}")
+            return False
+
     def toggle_script(self):
         if not self.is_running:
             # === 启动 ===
-            if not os.path.exists(TEMPLATE_IMAGE):
-                self.log(f"错误: 找不到 {TEMPLATE_IMAGE}")
+            if not os.path.exists(TEMPLATE_IMAGE_PATH):
+                self.log(f"错误: 找不到 {TEMPLATE_IMAGE_PATH}")
                 return
 
             # 寻找窗口
@@ -126,8 +164,15 @@ class QingqueBotGUI:
             except:
                 pass
 
-            # 计算区域
+            # 1. 锁定窗口区域
             self.game_region = self.get_game_region(window)
+
+            # 2. 关键步骤：根据窗口实际高度准备图片
+            # window.height 包含了标题栏，但通常比例是对的。
+            # 如果为了更精确，可以用 client area，但 window.height 足够通用。
+            if not self.prepare_template_image(window.height):
+                return
+
             self.log(f"已锁定窗口，区域: {self.game_region}")
 
             self.is_running = True
@@ -187,9 +232,9 @@ class QingqueBotGUI:
                 continue
 
             try:
-                # 识别图像
+                # 核心修改：使用 self.current_template_image (PIL对象) 而不是文件名
                 location = pyautogui.locateOnScreen(
-                    TEMPLATE_IMAGE,
+                    self.current_template_image,  # 传入内存中处理好的图片对象
                     confidence=CONFIDENCE,
                     grayscale=True,
                     region=self.game_region
